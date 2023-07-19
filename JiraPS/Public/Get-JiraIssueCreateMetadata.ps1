@@ -21,7 +21,6 @@ function Get-JiraIssueCreateMetadata {
 
         $server = Get-JiraConfigServer -ErrorAction Stop
 
-        $resourceURi = "$server/rest/api/2/issue/createmeta?projectIds={0}&issuetypeIds={1}&expand=projects.issuetypes.fields"
     }
 
     process {
@@ -41,45 +40,36 @@ function Get-JiraIssueCreateMetadata {
             Write-Error @errorMessage
         }
 
+        $resourceURi = "$server/rest/api/2/issue/createmeta?projectIds=$($projectObj.Id)&issuetypeIds=$($issueTypeObj.Id)&expand=projects.issuetypes.fields"
+
         $parameter = @{
             URI        = $resourceURi -f $projectObj.Id, $issueTypeObj.Id
             Method     = "GET"
             Credential = $Credential
+            ErrorAction = 'Stop'
         }
         Write-Debug "[$($MyInvocation.MyCommand.Name)] Invoking JiraMethod with `$parameter"
-        $result = Invoke-JiraMethod @parameter
+
+        try {
+            $rawResult = Invoke-JiraMethod @parameter
+        }
+        catch {
+            Write-Debug "[$($MyInvocation.MyCommand.Name)] Trying the old API URI."
+            $resourceURi = "$server/rest/api/2/issue/createmeta/$($projectObj.Id)/issuetypes/$($issueTypeObj.Id)"
+            $parameter.URI = $resourceURi
+            $rawResult = Invoke-JiraMethod @parameter
+        }
+
+        Write-Debug "[$($MyInvocation.MyCommand.Name)]`r`n$($rawResult)"
+        $result = $rawResult.values
+        Write-Debug "[$($MyInvocation.MyCommand.Name)]`r`n$($result)"
 
         if ($result) {
-            if (@($result.projects).Count -eq 0) {
+            if ($result.Count -eq 0) {
                 $errorMessage = @{
                     Category         = "InvalidResult"
                     CategoryActivity = "Validating response"
-                    Message          = "No projects were found for the given project [$Project]. Use Get-JiraProject for more details."
-                }
-                Write-Error @errorMessage
-            }
-            elseif (@($result.projects).Count -gt 1) {
-                $errorMessage = @{
-                    Category         = "InvalidResult"
-                    CategoryActivity = "Validating response"
-                    Message          = "Multiple projects were found for the given project [$Project]. Refine the parameters to return only one project."
-                }
-                Write-Error @errorMessage
-            }
-
-            if (@($result.projects.issuetypes) -eq 0) {
-                $errorMessage = @{
-                    Category         = "InvalidResult"
-                    CategoryActivity = "Validating response"
-                    Message          = "No issue types were found for the given issue type [$IssueType]. Use Get-JiraIssueType for more details."
-                }
-                Write-Error @errorMessage
-            }
-            elseif (@($result.projects.issuetypes).Count -gt 1) {
-                $errorMessage = @{
-                    Category         = "InvalidResult"
-                    CategoryActivity = "Validating response"
-                    Message          = "Multiple issue types were found for the given issue type [$IssueType]. Refine the parameters to return only one issue type."
+                    Message          = "No fields were found for the given project [$($Project)] and issuetype [$($IssueType)]. Use Get-JiraProject for more details."
                 }
                 Write-Error @errorMessage
             }
